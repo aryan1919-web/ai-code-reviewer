@@ -113,22 +113,6 @@ ai-code-reviewer/
 | `GEMINI_API_KEY` | Google Gemini API key | Yes |
 | `PORT` | Backend server port (default: 5000) | No |
 
-## 🌐 Deployment
-
-### Deploy to Vercel (Frontend)
-1. Push code to GitHub
-2. Connect repo to Vercel
-3. Set root directory to `frontend`
-4. Build command: `npm run build`
-5. Output directory: `dist`
-
-### Deploy to Render (Backend)
-1. Create new Web Service on Render
-2. Connect GitHub repo
-3. Set root directory to `backend`
-4. Add environment variables
-5. Deploy!
-
 ## 📊 API Endpoints
 
 | Method | Endpoint | Description |
