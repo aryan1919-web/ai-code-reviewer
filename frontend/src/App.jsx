@@ -23,6 +23,8 @@ function calculateSum(arr) {
 const result = calculateSum([1, 2, 3, 4, 5]);
 console.log(result);`;
 
+const API_URL = import.meta.env.VITE_API_URL || '';
+
 function AppContent() {
   const [code, setCode] = useState(DEFAULT_CODE);
   const [language, setLanguage] = useState('javascript');
@@ -51,7 +53,7 @@ function AppContent() {
 
   const checkApiHealth = async () => {
     try {
-      const response = await fetch('/api/health');
+      const response = await fetch(`${API_URL}/api/health`);
       const data = await response.json();
       setApiStatus(data);
     } catch (error) {
@@ -77,7 +79,7 @@ function AppContent() {
     setReview(null);
 
     try {
-      const response = await fetch('/api/review', {
+      const response = await fetch(`${API_URL}/api/review`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
