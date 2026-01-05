@@ -127,9 +127,9 @@ JavaScript, TypeScript, Python, Java, C++, C, C#, Go, Rust, PHP, Ruby, Swift, Ko
 
 ## 👨‍💻 Author
 
-**Your Name**
-- GitHub: [@yourusername](https://github.com/yourusername)
-- LinkedIn: [Your LinkedIn](https://linkedin.com/in/yourprofile)
+**Aryan Bhalodiya**
+- GitHub: [@aryan1919-web](https://github.com/aryan1919-web)
+- LinkedIn: [Aryan Bhalodiya](https://www.linkedin.com/in/aryan-bhalodiya31)
 
 ## 📄 License
 
