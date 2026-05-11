@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -11,72 +10,25 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// API Key Rotation System
-const API_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '').split(',').filter(k => k.trim());
+// Groq API Keys (rotation for rate limit handling)
+const GROQ_KEYS = (process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || '').split(',').filter(k => k.trim());
 let currentKeyIndex = 0;
-const keyLastUsed = new Map(); // Track when each key was last used
-const keyErrorCount = new Map(); // Track consecutive errors per key
 
-function getNextApiKey() {
-  if (API_KEYS.length === 0) return null;
-  
-  // Find a key that hasn't been used recently (2 second cooldown — fast rotation with 10+ keys)
-  const now = Date.now();
-  for (let i = 0; i < API_KEYS.length; i++) {
-    const index = (currentKeyIndex + i) % API_KEYS.length;
-    const key = API_KEYS[index].trim();
-    const lastUsed = keyLastUsed.get(key) || 0;
-    const errorCount = keyErrorCount.get(key) || 0;
-    
-    // Skip keys with too many errors or used within 2 seconds
-    if (errorCount < 3 && (now - lastUsed) > 2000) {
-      currentKeyIndex = index;
-      return key;
-    }
-  }
-  
-  // If all keys are on cooldown, use the one with least recent use
-  let oldestKey = API_KEYS[0].trim();
-  let oldestTime = keyLastUsed.get(oldestKey) || 0;
-  
-  for (const key of API_KEYS) {
-    const k = key.trim();
-    const lastUsed = keyLastUsed.get(k) || 0;
-    if (lastUsed < oldestTime) {
-      oldestTime = lastUsed;
-      oldestKey = k;
-    }
-  }
-  
-  return oldestKey;
-}
-
-function markKeyUsed(key) {
-  keyLastUsed.set(key, Date.now());
-}
-
-function markKeyError(key) {
-  const count = (keyErrorCount.get(key) || 0) + 1;
-  keyErrorCount.set(key, count);
-  
-  // Reset error count after 2 minutes
-  setTimeout(() => {
-    keyErrorCount.set(key, Math.max(0, (keyErrorCount.get(key) || 0) - 1));
-  }, 120000);
-}
-
-function resetKeyError(key) {
-  keyErrorCount.set(key, 0);
+function getNextGroqKey() {
+  if (GROQ_KEYS.length === 0) return null;
+  const key = GROQ_KEYS[currentKeyIndex % GROQ_KEYS.length].trim();
+  currentKeyIndex = (currentKeyIndex + 1) % GROQ_KEYS.length;
+  return key;
 }
 
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// Rate limiting - higher limit since we have multiple keys
+// Rate limiting
 const limiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 30, // Allow more requests since we rotate keys
+  windowMs: 60 * 1000,
+  max: 30,
   message: {
     error: 'Too many requests. Please wait a minute before trying again.',
     retryAfter: 60
@@ -85,136 +37,122 @@ const limiter = rateLimit({
 
 app.use('/api/', limiter);
 
-// Helper function to make API call with a specific key
-async function callGeminiWithKey(apiKey, prompt) {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  // Using gemini-2.0-flash — reliable and fast
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-  return await model.generateContent(prompt);
+// Groq API call — uses OpenAI-compatible REST API (no SDK needed)
+async function callGroq(apiKey, prompt) {
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert code reviewer. Always respond with ONLY valid JSON, no markdown, no extra text.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 4096,
+      response_format: { type: 'json_object' }
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Groq API ${response.status}: ${err}`);
+  }
+
+  return await response.json();
 }
 
-// Helper function to wait
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Code Review Endpoint with Auto-Retry and Key Rotation
+// Code Review Endpoint
 app.post('/api/review', async (req, res) => {
   try {
     const { code, language } = req.body;
 
     if (!code || !language) {
-      return res.status(400).json({ 
-        error: 'Code and language are required' 
-      });
+      return res.status(400).json({ error: 'Code and language are required' });
     }
 
-    if (API_KEYS.length === 0) {
-      return res.status(500).json({ 
-        error: 'No API keys configured. Please add your API keys to .env file.' 
-      });
+    if (GROQ_KEYS.length === 0) {
+      return res.status(500).json({ error: 'No API keys configured.' });
     }
 
-    const prompt = `You are an expert code reviewer. Analyze the following ${language} code and provide a comprehensive review.
+    const prompt = `Analyze the following ${language} code and provide a comprehensive review.
 
 CODE:
 \`\`\`${language}
 ${code}
 \`\`\`
 
-IMPORTANT: Respond with ONLY valid JSON. No markdown code blocks, no extra text. The improvedCode field should contain the raw code as a string (escape newlines as \\n, escape quotes as \\").
-
+Respond with this exact JSON structure:
 {
   "summary": "Brief overall assessment (2-3 sentences)",
   "score": <number 1-10>,
   "bugs": [{"line": "N/A or number", "severity": "critical|high|medium|low", "description": "...", "fix": "..."}],
   "optimizations": [{"type": "performance|readability|maintainability|best-practice", "description": "...", "suggestion": "..."}],
   "security": [{"severity": "critical|high|medium|low", "vulnerability": "...", "description": "...", "fix": "..."}],
-  "improvedCode": "improved code as escaped string with \\n for newlines",
+  "improvedCode": "improved code as a string",
   "positives": ["good thing 1", "good thing 2"]
-}
 }`;
 
-    // Try with key rotation and automatic retry
-    const maxRetries = API_KEYS.length; // Try ALL keys
-    const maxWaitCycles = 1; // Only 1 retry cycle to avoid long waits
+    // Try each key (max 2 attempts per key)
     let lastError = null;
+    const maxAttempts = GROQ_KEYS.length * 2;
 
-    for (let waitCycle = 0; waitCycle <= maxWaitCycles; waitCycle++) {
-      let usedKeys = new Set();
-      
-      // If this is a retry after waiting, log it
-      if (waitCycle > 0) {
-        console.log(`\n🔄 Wait cycle ${waitCycle}/${maxWaitCycles} - Retrying all keys after cooldown...`);
-      }
-
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        const apiKey = getNextApiKey();
-        
-        // Skip if we already tried this key in this cycle
-        if (usedKeys.has(apiKey)) {
-          continue;
-        }
-        usedKeys.add(apiKey);
-      
-      console.log(`🔑 Attempt ${attempt + 1}/${maxRetries} with key ending in ...${apiKey.slice(-6)}`);
-      markKeyUsed(apiKey);
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const apiKey = getNextGroqKey();
+      console.log(`🔑 Attempt ${attempt + 1} with Groq key ...${apiKey.slice(-6)}`);
 
       try {
-        const result = await callGeminiWithKey(apiKey, prompt);
-        const response = await result.response;
-        let text = response.text();
+        const result = await callGroq(apiKey, prompt);
+        const text = result.choices[0].message.content;
 
-        // Success! Reset error count for this key
-        resetKeyError(apiKey);
-        console.log(`✅ Success with key ...${apiKey.slice(-6)}`);
+        console.log(`✅ Success with Groq key ...${apiKey.slice(-6)}`);
 
-        // Clean up the response - remove markdown code blocks if present
-        text = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
-        text = text.replace(/^\s+|\s+$/g, '');
+        // Clean up response
+        let cleanText = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
 
         try {
-          const reviewData = JSON.parse(text);
-          
+          const reviewData = JSON.parse(cleanText);
+
           if (reviewData.improvedCode) {
             reviewData.improvedCode = reviewData.improvedCode
               .replace(/^```[\w]*\n?/gm, '')
               .replace(/```$/gm, '')
               .trim();
           }
-          
+
           return res.json({
             success: true,
             review: reviewData,
             timestamp: new Date().toISOString(),
-            keyUsed: `...${apiKey.slice(-6)}`
+            model: 'llama-3.3-70b (Groq)'
           });
         } catch (parseError) {
-          console.log('Parse error, trying to extract JSON:', parseError.message);
-          
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          // Try to extract JSON from response
+          const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
-            try {
-              const reviewData = JSON.parse(jsonMatch[0]);
-              if (reviewData.improvedCode) {
-                reviewData.improvedCode = reviewData.improvedCode
-                  .replace(/^```[\w]*\n?/gm, '')
-                  .replace(/```$/gm, '')
-                  .trim();
-              }
-              return res.json({
-                success: true,
-                review: reviewData,
-                timestamp: new Date().toISOString(),
-                keyUsed: `...${apiKey.slice(-6)}`
-              });
-            } catch (e) {
-              // Fall through to fallback
-            }
+            const reviewData = JSON.parse(jsonMatch[0]);
+            return res.json({
+              success: true,
+              review: reviewData,
+              timestamp: new Date().toISOString(),
+              model: 'llama-3.3-70b (Groq)'
+            });
           }
-          
+
+          // Fallback response
           return res.json({
             success: true,
             review: {
-              summary: text.substring(0, 500),
+              summary: cleanText.substring(0, 500),
               score: 7,
               bugs: [],
               optimizations: [],
@@ -229,62 +167,39 @@ IMPORTANT: Respond with ONLY valid JSON. No markdown code blocks, no extra text.
       } catch (error) {
         lastError = error;
         console.log(`❌ Key ...${apiKey.slice(-6)} failed: ${error.message}`);
-        
-        // Check if it's a rate limit error (429)
-        if (error.message.includes('429') || error.message.includes('quota') || error.message.includes('rate')) {
-          markKeyError(apiKey);
-          console.log(`⏳ Key ...${apiKey.slice(-6)} rate limited, rotating to next key...`);
-          // Move to next key
-          currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+
+        // If rate limited, try next key immediately
+        if (error.message.includes('429')) {
           continue;
         }
-        
-        // For other errors, also try next key
-        markKeyError(apiKey);
-      }
-      } // end of attempt loop
-      
-      // If we reach here, all keys in this cycle failed
-      // Wait before trying again (unless this is the last cycle)
-      if (waitCycle < maxWaitCycles) {
-        const waitTime = 10 + (waitCycle * 5); // 10s, 15s, 20s - quick retry with many keys
-        console.log(`\n⏰ All keys exhausted. Auto-waiting ${waitTime} seconds before retry...`);
-        
-        // Reset key errors to give them another chance
-        for (const key of API_KEYS) {
-          keyErrorCount.set(key.trim(), 0);
-          keyLastUsed.set(key.trim(), 0);
-        }
-        
-        await sleep(waitTime * 1000);
-      }
-    } // end of waitCycle loop
 
-    // All retries and wait cycles exhausted
-    console.error('All API keys exhausted after all wait cycles:', lastError?.message);
-    res.status(429).json({ 
-      error: 'All API keys are rate limited even after waiting. Please try again in 1-2 minutes or add more API keys to .env file.',
-      details: lastError?.message,
-      keysAvailable: API_KEYS.length,
-      suggestion: 'Create more free API keys at https://aistudio.google.com/app/apikey'
+        // For other errors, small delay then retry
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+
+    // All attempts failed
+    res.status(429).json({
+      error: 'Service temporarily busy. Please try again in a few seconds.',
+      details: lastError?.message
     });
 
   } catch (error) {
     console.error('Review error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to analyze code. Please try again.',
-      details: error.message 
+      details: error.message
     });
   }
 });
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
-    apiKeysConfigured: API_KEYS.length,
-    currentKeyIndex: currentKeyIndex
+    apiKeysConfigured: GROQ_KEYS.length,
+    provider: 'Groq (Llama 3.3 70B)'
   });
 });
 
@@ -323,6 +238,6 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`🔑 API Keys loaded: ${API_KEYS.length}`);
-  console.log(`📋 API Health: http://localhost:${PORT}/api/health`);
+  console.log(`🔑 Groq API Keys loaded: ${GROQ_KEYS.length}`);
+  console.log(`⚡ Model: Llama 3.3 70B via Groq (ultra-fast inference)`);
 });
