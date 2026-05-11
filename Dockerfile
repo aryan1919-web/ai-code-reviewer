@@ -2,18 +2,14 @@ FROM node:18-slim
 
 WORKDIR /app
 
-# Copy and install backend deps
-COPY backend/package*.json ./backend/
+# Copy everything first
+COPY . .
+
+# Install backend deps
 RUN cd backend && npm install --omit=dev
 
-# Copy and install frontend deps + build
-COPY frontend/package*.json ./frontend/
-RUN cd frontend && npm install
-COPY frontend/ ./frontend/
-RUN cd frontend && npm run build
-
-# Copy backend source
-COPY backend/ ./backend/
+# Install frontend deps and build
+RUN cd frontend && npm install && npm run build
 
 # Create non-root user (HF Spaces requirement)
 RUN useradd -m -u 1000 user
