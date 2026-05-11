@@ -4,11 +4,11 @@ WORKDIR /app
 
 # Copy and install backend deps
 COPY backend/package*.json ./backend/
-RUN cd backend && npm ci --production
+RUN cd backend && npm install --omit=dev
 
 # Copy and install frontend deps + build
 COPY frontend/package*.json ./frontend/
-RUN cd frontend && npm ci
+RUN cd frontend && npm install
 COPY frontend/ ./frontend/
 RUN cd frontend && npm run build
 
