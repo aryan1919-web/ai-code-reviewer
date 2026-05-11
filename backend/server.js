@@ -20,7 +20,7 @@ const keyErrorCount = new Map(); // Track consecutive errors per key
 function getNextApiKey() {
   if (API_KEYS.length === 0) return null;
   
-  // Find a key that hasn't been used recently (60 second cooldown)
+  // Find a key that hasn't been used recently (2 second cooldown — fast rotation with 10+ keys)
   const now = Date.now();
   for (let i = 0; i < API_KEYS.length; i++) {
     const index = (currentKeyIndex + i) % API_KEYS.length;
@@ -28,8 +28,8 @@ function getNextApiKey() {
     const lastUsed = keyLastUsed.get(key) || 0;
     const errorCount = keyErrorCount.get(key) || 0;
     
-    // Skip keys with too many errors or used within 30 seconds
-    if (errorCount < 3 && (now - lastUsed) > 30000) {
+    // Skip keys with too many errors or used within 2 seconds
+    if (errorCount < 3 && (now - lastUsed) > 2000) {
       currentKeyIndex = index;
       return key;
     }
@@ -88,8 +88,8 @@ app.use('/api/', limiter);
 // Helper function to make API call with a specific key
 async function callGeminiWithKey(apiKey, prompt) {
   const genAI = new GoogleGenerativeAI(apiKey);
-  // Using gemini-2.0-flash - good balance of speed and quality with higher rate limits
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  // Using gemini-2.0-flash-lite — fastest model, great for code review
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' });
   return await model.generateContent(prompt);
 }
 
@@ -247,7 +247,7 @@ IMPORTANT: Respond with ONLY valid JSON. No markdown code blocks, no extra text.
       // If we reach here, all keys in this cycle failed
       // Wait before trying again (unless this is the last cycle)
       if (waitCycle < maxWaitCycles) {
-        const waitTime = 45 + (waitCycle * 20); // 45s, 65s, 85s - more time for rate limit reset
+        const waitTime = 10 + (waitCycle * 5); // 10s, 15s, 20s - quick retry with many keys
         console.log(`\n⏰ All keys exhausted. Auto-waiting ${waitTime} seconds before retry...`);
         
         // Reset key errors to give them another chance
