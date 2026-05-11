@@ -1,3 +1,15 @@
+---
+title: CodeReview AI
+emoji: 🔍
+colorFrom: blue
+colorTo: cyan
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+short_description: AI-Powered Code Review Platform using Google Gemini
+---
+
 <p align="center">
   <img src="https://img.shields.io/badge/React-18.3-61DAFB?style=for-the-badge&logo=react&logoColor=white" />
   <img src="https://img.shields.io/badge/Node.js-Express-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
@@ -11,6 +23,15 @@
 # 🔍 CodeReview AI — AI-Powered Secure Code Review Platform
 
 > A full-stack code analysis platform powered by **Google Gemini AI** that detects bugs, security vulnerabilities, and performance issues across **16+ programming languages** with an instant, structured review.
+
+<p align="center">
+  <a href="https://aryan1211-ai-code-reviewer.hf.space">
+    <img src="https://img.shields.io/badge/🚀_Live_Demo-Try_It_Now-FF6B6B?style=for-the-badge" />
+  </a>
+  <a href="https://huggingface.co/spaces/aryan1211/ai-code-reviewer">
+    <img src="https://img.shields.io/badge/🤗_Hugging_Face-Spaces-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black" />
+  </a>
+</p>
 
 ---
 

@@ -1,8 +1,9 @@
 services:
   - type: web
-    name: ai-code-reviewer-backend
+    name: ai-code-reviewer
     env: node
-    buildCommand: npm install
+    rootDir: backend
+    buildCommand: npm install && cd ../frontend && npm install && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV

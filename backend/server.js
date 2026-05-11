@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
 
@@ -310,8 +312,17 @@ app.get('/api/languages', (req, res) => {
   });
 });
 
+// Serve frontend build in production
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const frontendDist = path.join(__dirname, '..', 'frontend', 'dist');
+app.use(express.static(frontendDist));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(frontendDist, 'index.html'));
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`� API Keys loaded: ${API_KEYS.length}`);
-  console.log(`�📋 API Health: http://localhost:${PORT}/api/health`);
+  console.log(`🔑 API Keys loaded: ${API_KEYS.length}`);
+  console.log(`📋 API Health: http://localhost:${PORT}/api/health`);
 });
