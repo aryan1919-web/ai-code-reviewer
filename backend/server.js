@@ -88,8 +88,8 @@ app.use('/api/', limiter);
 // Helper function to make API call with a specific key
 async function callGeminiWithKey(apiKey, prompt) {
   const genAI = new GoogleGenerativeAI(apiKey);
-  // Using gemini-2.0-flash-lite — fastest model, great for code review
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' });
+  // Using gemini-2.0-flash — reliable and fast
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   return await model.generateContent(prompt);
 }
 
@@ -135,7 +135,7 @@ IMPORTANT: Respond with ONLY valid JSON. No markdown code blocks, no extra text.
 
     // Try with key rotation and automatic retry
     const maxRetries = API_KEYS.length; // Try ALL keys
-    const maxWaitCycles = 3; // Will wait and retry up to 3 times if all keys fail
+    const maxWaitCycles = 1; // Only 1 retry cycle to avoid long waits
     let lastError = null;
 
     for (let waitCycle = 0; waitCycle <= maxWaitCycles; waitCycle++) {
